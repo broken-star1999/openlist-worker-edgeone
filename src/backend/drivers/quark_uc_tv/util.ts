@@ -144,6 +144,7 @@ export class ClientQuarkUcTv {
     pathname: string,
     method: string,
     extraQuery: Record<string, string> = {},
+    refreshAttempt = 0,
   ): Promise<T> {
     const { tm, token, reqId } = await this.generateSign(method, pathname)
     const qs = new URLSearchParams({
@@ -173,8 +174,19 @@ export class ClientQuarkUcTv {
       errInfo.includes("token无效") ||
       errInfo.includes("token 无效")
     if (tokenInvalid) {
+      if (refreshAttempt > 0) {
+        const detail = data.error_info ? `: ${data.error_info}` : ""
+        throw new Error(
+          `[QuarkTV] access token is still invalid after refresh${detail}`,
+        )
+      }
       await this.refreshToken()
-      return this.request<T>(pathname, method, extraQuery)
+      return this.request<T>(
+        pathname,
+        method,
+        extraQuery,
+        refreshAttempt + 1,
+      )
     }
     // Go's original response struct uses int fields, so omitted status/errno
     // values decode to zero. Mirror that behavior for OAuth responses that
