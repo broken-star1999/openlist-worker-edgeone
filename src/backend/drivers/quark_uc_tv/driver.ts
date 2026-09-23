@@ -11,10 +11,17 @@ const DEFAULT_ROOT = "0"
 /** 只读驱动：仅 list + get（下载） */
 export class DriverQuarkUcTv implements StorageDriver {
   private client: ClientQuarkUcTv
+  private addition: DriverQuarkUcTvAddition
   private pathCache = new Map<string, string>()
 
-  constructor(addition: DriverQuarkUcTvAddition) {
-    this.client = new ClientQuarkUcTv(addition)
+  constructor(
+    addition: DriverQuarkUcTvAddition,
+    onAdditionUpdate?: (
+      addition: DriverQuarkUcTvAddition,
+    ) => void | Promise<void>,
+  ) {
+    this.addition = addition
+    this.client = new ClientQuarkUcTv(addition, onAdditionUpdate)
   }
 
   async init(): Promise<void> {
@@ -55,7 +62,14 @@ export class DriverQuarkUcTv implements StorageDriver {
         const item = this.fileToItem(file)
         if (!item.is_dir) {
           try {
-            item.raw_url = await this.client.getDownloadUrl(file.fid)
+            const useStreaming =
+              this.addition.link_method === "streaming" &&
+              file.category === 1 &&
+              file.size > 0
+            item.raw_url = await this.client.getDownloadUrl(
+              file.fid,
+              useStreaming,
+            )
           } catch (e: any) {
             item.raw_url_error = e.message
           }
@@ -115,11 +129,11 @@ export class DriverQuarkUcTv implements StorageDriver {
 
   private async resolveDirId(physicalPath: string): Promise<string> {
     const clean = physicalPath.split("/").filter(Boolean).join("/")
-    if (!clean) return DEFAULT_ROOT
+    if (!clean) return this.addition.root_folder_id || DEFAULT_ROOT
     if (this.pathCache.has(clean)) return this.pathCache.get(clean)!
 
     const parts = clean.split("/")
-    let currentId = DEFAULT_ROOT
+    let currentId = this.addition.root_folder_id || DEFAULT_ROOT
     for (let i = 0; i < parts.length; i++) {
       const files = await this.client.getFiles(currentId)
       const target = files.find((f) => f.isdir === 1 && f.filename === parts[i])

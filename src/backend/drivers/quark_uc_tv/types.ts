@@ -2,8 +2,10 @@
 // API reference: Go drivers/quark_uc_tv
 
 export interface DriverQuarkUcTvAddition {
-  refresh_token: string
+  refresh_token?: string
+  query_token?: string
   device_id?: string
+  root_folder_id?: string
   order_by?: string // "file_name" | "updated_at"
   order_direction?: string // "asc" | "desc"
   link_method?: "download" | "streaming"

@@ -384,7 +384,25 @@ async function createDriver(
     normDriver === "uctv" ||
     normDriver === "quark_uc_tv"
   ) {
-    driver = new DriverQuarkUcTv(parseAddition(storageConfig))
+    const addition = parseAddition(storageConfig)
+    addition.variant = normDriver === "uctv" ? "uc" : "quark"
+    driver = new DriverQuarkUcTv(addition, async (updatedAddition) => {
+      storageConfig.addition = JSON.stringify(updatedAddition)
+      if (deferredTokenPersistence.has(storageConfig)) return
+      try {
+        const db = await getDb()
+        const st = (db.storages || []).find(
+          (s: any) => s.id === storageConfig?.id,
+        )
+        if (!st) return
+        const stAddition = parseAddition(st)
+        Object.assign(stAddition, updatedAddition)
+        st.addition = JSON.stringify(stAddition)
+        await saveDb(db)
+      } catch (e) {
+        console.warn("[QuarkTV] failed to persist login tokens:", e)
+      }
+    })
     await driver.init?.()
   } else if (
     normDriver === "123open" ||

@@ -495,6 +495,8 @@ adminRouter.get("/driver/names", (c) => {
       "Onedrive",
       "OnedriveAPP",
       "Quark",
+      "QuarkTV",
+      "UCTV",
       "123Pan",
       "BaiduNetdisk",
       "115Open",
@@ -708,6 +710,84 @@ const COMMON_FIELDS = [
   DISABLE_PROXY_SIGN_FIELD,
   SEED_POLICY_FIELD,
 ]
+
+function buildQuarkTvDriverConfig(name: "QuarkTV" | "UCTV", mountPath: string) {
+  return {
+    name,
+    default_mount_path: mountPath,
+    common: [
+      ...BASE_FIELDS,
+      CUSTOM_CACHE_POLICIES_FIELD,
+      ENABLE_SIGN_FIELD,
+      DISABLE_INDEX_FIELD,
+      ...buildProxyFields(name),
+      DOWN_PROXY_URL_FIELD,
+      DISABLE_PROXY_SIGN_FIELD,
+      SEED_POLICY_FIELD,
+    ],
+    additional: [
+      {
+        name: "root_folder_id",
+        type: "string",
+        default: "0",
+        required: true,
+      },
+      {
+        name: "order_by",
+        type: "select",
+        options: "file_name,updated_at",
+        default: "updated_at",
+        required: false,
+      },
+      {
+        name: "order_direction",
+        type: "select",
+        options: "asc,desc",
+        default: "desc",
+        required: false,
+      },
+      {
+        name: "refresh_token",
+        type: "text",
+        default: "",
+        required: false,
+        help: "Filled automatically after QR login",
+      },
+      {
+        name: "device_id",
+        type: "string",
+        default: "",
+        required: false,
+        help: "Generated automatically; do not edit",
+      },
+      {
+        name: "query_token",
+        type: "text",
+        default: "",
+        required: false,
+        help: "Generated for QR login; do not edit",
+      },
+      {
+        name: "link_method",
+        type: "select",
+        options: "download,streaming",
+        default: "download",
+        required: true,
+      },
+    ],
+    config: {
+      name,
+      local_sort: true,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: true,
+      no_overwrite_upload: true,
+      need_ms: false,
+      default_root: "0",
+    },
+  }
+}
 
 const driverConfigs: Record<string, any> = {
   AliyundriveOpen: {
@@ -1099,6 +1179,8 @@ const driverConfigs: Record<string, any> = {
       default_root: "0",
     },
   },
+  QuarkTV: buildQuarkTvDriverConfig("QuarkTV", "/quarktv"),
+  UCTV: buildQuarkTvDriverConfig("UCTV", "/uctv"),
   "123Pan": {
     name: "123Pan",
     default_mount_path: "/123",

@@ -50,24 +50,66 @@ const CONFS: Record<"quark" | "uc", Conf> = {
   },
 }
 
+function asQrDataUrl(qrData: string): string {
+  const value = qrData.trim().replace(/\s+/g, "")
+  const match = value.match(
+    /^(data:image\/[a-z0-9.+-]+;base64,)?([a-z0-9+/=_-]+)$/i,
+  )
+  if (!match) throw new Error("[QuarkTV] login QR data is invalid")
+  return match[1] ? value : `data:image/jpeg;base64,${match[2]}`
+}
+
 export class ClientQuarkUcTv {
   private conf: Conf
   private addition: DriverQuarkUcTvAddition
   private accessToken = ""
   private deviceId: string
+  private onAdditionUpdate?: (
+    addition: DriverQuarkUcTvAddition,
+  ) => void | Promise<void>
 
-  constructor(addition: DriverQuarkUcTvAddition) {
+  constructor(
+    addition: DriverQuarkUcTvAddition,
+    onAdditionUpdate?: (
+      addition: DriverQuarkUcTvAddition,
+    ) => void | Promise<void>,
+  ) {
     this.addition = addition
     this.conf = CONFS[addition.variant || "quark"]
     this.deviceId = addition.device_id || md5(String(Date.now()))
     this.addition.device_id = this.deviceId
+    this.onAdditionUpdate = onAdditionUpdate
   }
 
   async init(): Promise<void> {
+    await this.persistAddition()
+
     if (!this.addition.refresh_token) {
-      throw new Error("[QuarkTV] refresh_token is required")
+      if (!this.addition.query_token) {
+        const qrData = await this.getLoginCode()
+        if (!qrData) throw new Error("[QuarkTV] login QR code is empty")
+        const qrSrc = asQrDataUrl(qrData)
+        throw new Error(
+          `need verify: \n<body><img src="${qrSrc}"/></body>`,
+        )
+      }
+
+      const code = await this.getCode()
+      if (!code) {
+        throw new Error(
+          "[QuarkTV] QR login is not confirmed yet; scan and retry",
+        )
+      }
+      await this.exchangeCode(code)
+    } else {
+      await this.refreshToken()
     }
-    await this.refreshToken()
+
+    await this.isLogin()
+  }
+
+  private async persistAddition(): Promise<void> {
+    await this.onAdditionUpdate?.({ ...this.addition })
   }
 
   private async generateSign(
@@ -141,29 +183,77 @@ export class ClientQuarkUcTv {
   }
 
   private async refreshToken(): Promise<void> {
+    if (!this.addition.refresh_token) {
+      throw new Error("[QuarkTV] refresh_token is required")
+    }
+    await this.exchangeToken(this.addition.refresh_token, true)
+  }
+
+  private async exchangeCode(code: string): Promise<void> {
+    await this.exchangeToken(code, false)
+  }
+
+  private async exchangeToken(
+    value: string,
+    isRefresh: boolean,
+  ): Promise<void> {
     const pathname = "/token"
     const { reqId } = await this.generateSign("POST", pathname)
     const body: Record<string, string> = {
       req_id: reqId,
       ...this.deviceQuery(),
     }
-    if (this.accessToken) {
-      body.refresh_token = this.addition.refresh_token
-    } else {
-      body.refresh_token = this.addition.refresh_token
-    }
+    body[isRefresh ? "refresh_token" : "code"] = value
     const resp = await fetch(`${this.conf.codeApi}${pathname}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     })
     const data: any = await resp.json().catch(() => ({}))
-    if (data?.code !== 200)
+    if (!resp.ok || data?.code !== 200)
       throw new Error(`[QuarkTV] ${data?.message || "token refresh failed"}`)
     const d = data.data || {}
-    if (!d.access_token) throw new Error("[QuarkTV] refresh token empty")
+    if (!d.refresh_token) throw new Error("[QuarkTV] refresh token is empty")
+    if (!d.access_token) throw new Error("[QuarkTV] access token is empty")
     this.accessToken = d.access_token
-    if (d.refresh_token) this.addition.refresh_token = d.refresh_token
+    this.addition.refresh_token = d.refresh_token
+    await this.persistAddition()
+  }
+
+  private async isLogin(): Promise<void> {
+    await this.request("/user", "GET", { method: "user_info" })
+  }
+
+  private async getLoginCode(): Promise<string> {
+    const resp = await this.request<QuarkTvCommonResp & {
+      qr_data?: string
+      query_token?: string
+    }>("/oauth/authorize", "GET", {
+      auth_type: "code",
+      client_id: this.conf.clientID,
+      scope: "netdisk",
+      qrcode: "1",
+      qr_width: "460",
+      qr_height: "460",
+    })
+    if (!resp.query_token)
+      throw new Error("[QuarkTV] login query token is empty")
+    this.addition.query_token = resp.query_token
+    await this.persistAddition()
+    return resp.qr_data || ""
+  }
+
+  private async getCode(): Promise<string> {
+    const resp = await this.request<QuarkTvCommonResp & { code?: string }>(
+      "/oauth/code",
+      "GET",
+      {
+        client_id: this.conf.clientID,
+        scope: "netdisk",
+        query_token: this.addition.query_token || "",
+      },
+    )
+    return resp.code || ""
   }
 
   async getFiles(parentFid: string): Promise<QuarkTvFile[]> {
@@ -194,8 +284,8 @@ export class ClientQuarkUcTv {
     return all
   }
 
-  async getDownloadUrl(fid: string): Promise<string> {
-    if (this.addition.link_method === "streaming") {
+  async getDownloadUrl(fid: string, useStreaming = false): Promise<string> {
+    if (useStreaming) {
       const resp = await this.request<QuarkTvCommonResp>("/file", "GET", {
         method: "streaming",
         group_by: "source",
