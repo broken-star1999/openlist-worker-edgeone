@@ -176,8 +176,15 @@ export class ClientQuarkUcTv {
       await this.refreshToken()
       return this.request<T>(pathname, method, extraQuery)
     }
-    if (data.status >= 400 || data.errno !== 0) {
-      throw new Error(`[QuarkTV] ${data.error_info || `errno ${data.errno}`}`)
+    // Go's original response struct uses int fields, so omitted status/errno
+    // values decode to zero. Mirror that behavior for OAuth responses that
+    // return qr_data/query_token without an errno field.
+    const status = Number(data.status ?? 0)
+    const errno = Number(data.errno ?? 0)
+    if (status >= 400 || errno !== 0) {
+      throw new Error(
+        `[QuarkTV] ${data.error_info || `status ${status}, errno ${errno}`}`,
+      )
     }
     return data as T
   }
