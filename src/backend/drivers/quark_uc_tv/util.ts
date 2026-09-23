@@ -38,7 +38,7 @@ const CONFS: Record<"quark" | "uc", Conf> = {
     signKey: "kw2dvtd7p4t3pjl2d9ed9yc8yej8kw2d",
     appVer: "1.8.2.2",
     channel: "GENERAL",
-    codeApi: "http://api.extscreen.com/quarkdrive",
+    codeApi: "https://api.extscreen.com/quarkdrive",
   },
   uc: {
     api: "https://open-api-drive.uc.cn",
@@ -46,7 +46,7 @@ const CONFS: Record<"quark" | "uc", Conf> = {
     signKey: "l3srvtd7p42l0d0x1u8d7yc8ye9kki4d",
     appVer: "1.7.2.2",
     channel: "UCTVOFFICIALWEB",
-    codeApi: "http://api.extscreen.com/ucdrive",
+    codeApi: "https://api.extscreen.com/ucdrive",
   },
 }
 
@@ -181,9 +181,9 @@ export class ClientQuarkUcTv {
     // return qr_data/query_token without an errno field.
     const status = Number(data.status ?? 0)
     const errno = Number(data.errno ?? 0)
-    if (status >= 400 || errno !== 0) {
+    if (!resp.ok || status >= 400 || errno !== 0) {
       throw new Error(
-        `[QuarkTV] ${data.error_info || `status ${status}, errno ${errno}`}`,
+        `[QuarkTV] ${data.error_info || `HTTP ${resp.status}, status ${status}, errno ${errno}`}`,
       )
     }
     return data as T
@@ -220,7 +220,14 @@ export class ClientQuarkUcTv {
     if (!resp.ok || data?.code !== 200)
       throw new Error(`[QuarkTV] ${data?.message || "token refresh failed"}`)
     const d = data.data || {}
-    if (!d.refresh_token) throw new Error("[QuarkTV] refresh token is empty")
+    const tokenErrno = Number(d.errno ?? 0)
+    if (tokenErrno !== 0 || Number(d.status ?? 0) >= 400) {
+      throw new Error(
+        `[QuarkTV] ${d.error_info || `token status ${d.status ?? 0}, errno ${tokenErrno}`}`,
+      )
+    }
+    if (!d.refresh_token)
+      throw new Error(`[QuarkTV] ${d.error_info || "refresh token is empty"}`)
     if (!d.access_token) throw new Error("[QuarkTV] access token is empty")
     this.accessToken = d.access_token
     this.addition.refresh_token = d.refresh_token
