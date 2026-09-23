@@ -10,7 +10,10 @@ import {
   moveItems,
   copyItems,
 } from "../internal/op/storage"
-import { buildWebDavPropfindResponse } from "../internal/webdav/webdav"
+import {
+  buildWebDavPropfindResponse,
+  webDavHrefFromRequestUrl,
+} from "../internal/webdav/webdav"
 import { safeErrorMessage } from "../pkg/errs"
 import { encodeDownloadPath } from "../pkg/path"
 
@@ -131,12 +134,10 @@ webdavRouter.all("/*", async (c) => {
           isFolder: !!it.is_dir,
           modified: it.modified || new Date().toISOString(),
         }))
-        const href =
-          davPath === "/"
-            ? "/"
-            : davPath.endsWith("/")
-              ? davPath
-              : davPath + "/"
+        // `davPath` is the internal OpenList path (the `/dav` prefix was
+        // stripped by davPathOf). PROPFIND hrefs must use the public request
+        // path so DAV clients can match the current resource to this request.
+        const href = webDavHrefFromRequestUrl(c.req.url)
         const xml = buildWebDavPropfindResponse(href, items)
         return c.body(xml, depth === "0" ? 207 : 207, {
           "Content-Type": "application/xml; charset=utf-8",
